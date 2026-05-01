@@ -122,7 +122,6 @@
         let selectedNames = new Set();
         let battleInstances = [];
 
-        // --- 非同期関数を動的に作成するための魔法の定義 ---
         const AsyncFunction = Object.getPrototypeOf(async function () { }).constructor;
 
         socket.on('update_leaderboard', (data) => {
