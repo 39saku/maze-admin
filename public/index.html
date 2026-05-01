@@ -1,0 +1,277 @@
+<!DOCTYPE html>
+<html lang="ja">
+
+<head>
+    <meta charset="UTF-8">
+    <title>Maze Admin - Leaderboard</title>
+    <script src="/socket.io/socket.io.js"></script>
+    <style>
+        body {
+            background-color: #1a1a2e;
+            color: #ffffff;
+            font-family: sans-serif;
+            margin: 0;
+            overflow: hidden;
+        }
+
+        header {
+            background: #16213e;
+            padding: 15px;
+            text-align: center;
+            border-bottom: 2px solid #4cc9f0;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        h1 {
+            margin: 0;
+            color: #4cc9f0;
+            font-size: 24px;
+        }
+
+        .tab-container {
+            display: flex;
+            gap: 10px;
+            justify-content: center;
+            padding: 10px;
+            background: #16213e;
+        }
+
+        .tab-btn {
+            background: #0f3460;
+            color: white;
+            border: 1px solid #4cc9f0;
+            padding: 10px 20px;
+            cursor: pointer;
+            border-radius: 5px;
+        }
+
+        .tab-btn.active {
+            background: #4cc9f0;
+            color: #1a1a2e;
+            font-weight: bold;
+        }
+
+        .main-content {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 20px;
+            height: calc(100vh - 250px);
+            overflow-y: auto;
+        }
+
+        table {
+            width: 85%;
+            border-collapse: collapse;
+            font-size: 22px;
+            background: rgba(22, 33, 62, 0.8);
+        }
+
+        th {
+            background: #4cc9f0;
+            color: #1a1a2e;
+            padding: 12px;
+        }
+
+        td {
+            padding: 12px;
+            border-bottom: 1px solid #0f3460;
+            text-align: center;
+        }
+
+        tr:nth-child(1) td {
+            color: #f72585;
+            font-weight: bold;
+        }
+
+        /* コード表示モーダル */
+        #code-modal {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            width: 85%;
+            height: 85%;
+            background: #16213e;
+            border: 2px solid #4cc9f0;
+            z-index: 2000;
+            display: none;
+            padding: 20px;
+            border-radius: 10px;
+            box-shadow: 0 0 50px #000;
+        }
+
+        #code-display {
+            width: 100%;
+            height: 85%;
+            background: #000;
+            color: #0f0;
+            padding: 15px;
+            overflow: auto;
+            white-space: pre-wrap;
+            font-family: 'Courier New', monospace;
+            border: 1px solid #333;
+            font-size: 20px;
+            margin-top: 10px;
+            box-sizing: border-box;
+        }
+
+        .close-btn {
+            background: #f72585;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            cursor: pointer;
+            float: right;
+            border-radius: 5px;
+            font-weight: bold;
+        }
+
+        .ticker-wrap {
+            position: fixed;
+            bottom: 0;
+            width: 100%;
+            height: 50px;
+            background: #f72585;
+            display: flex;
+            align-items: center;
+            overflow: hidden;
+        }
+
+        .ticker {
+            white-space: nowrap;
+            animation: ticker 25s linear infinite;
+            font-size: 24px;
+            font-weight: bold;
+            padding-right: 100%;
+        }
+
+        @keyframes ticker {
+            0% {
+                transform: translateX(100%);
+            }
+
+            100% {
+                transform: translateX(-100%);
+            }
+        }
+    </style>
+</head>
+
+<body>
+
+    <header>
+        <h1>MAZE LEADERBOARD</h1>
+        <div>
+            <a href="/battle.html"><button
+                    style="background:#4cc9f0; border:none; padding:10px 20px; border-radius:5px; cursor:pointer; font-weight:bold; margin-right:10px;">BATTLE
+                    MODE</button></a>
+            <button onclick="emergencyStop()"
+                style="background:#e94560; color:white; border:none; padding:10px; border-radius:5px; cursor:pointer;">全停止</button>
+        </div>
+    </header>
+
+    <div class="tab-container">
+        <button class="tab-btn active" onclick="switchLevel(1)">Level 1</button>
+        <button class="tab-btn" onclick="switchLevel(2)">Level 2</button>
+        <button class="tab-btn" onclick="switchLevel(3)">Level 3</button>
+    </div>
+
+    <div class="main-content">
+        <h2 id="current-view-title" style="color:#4cc9f0;">Ranking: Level 1</h2>
+        <table id="ranking-table">
+            <thead>
+                <tr>
+                    <th>順位</th>
+                    <th>名前 (クリックでコード表示)</th>
+                    <th>手数</th>
+                    <th>タイム</th>
+                </tr>
+            </thead>
+            <tbody></tbody>
+        </table>
+    </div>
+
+    <!-- コード表示用モーダル -->
+    <div id="code-modal">
+        <button class="close-btn" onclick="closeCodeModal()">閉じる</button>
+        <h3 id="code-owner" style="color:#4cc9f0; margin:0;">---</h3>
+        <div id="code-display"></div>
+    </div>
+
+    <div class="ticker-wrap">
+        <div id="ticker" class="ticker">クリア速報を待っています...</div>
+    </div>
+
+    <script>
+        const socket = io();
+        let currentViewingLevel = 1;
+        let allScores = [];
+
+        // スコアデータの受信
+        socket.on('update_leaderboard', (scores) => {
+            allScores = scores;
+            renderRanking();
+        });
+
+        // レベル切り替え
+        function switchLevel(level) {
+            currentViewingLevel = level;
+            document.querySelectorAll('.tab-btn').forEach((btn, i) => {
+                btn.classList.toggle('active', i + 1 === level);
+            });
+            document.getElementById('current-view-title').innerText = `Ranking: Level ${level}`;
+            renderRanking();
+        }
+
+        // ランキング描画
+        function renderRanking() {
+            const filtered = allScores.filter(s => s.level === currentViewingLevel);
+            filtered.sort((a, b) => a.steps !== b.steps ? a.steps - b.steps : a.time - b.time);
+
+            const tbody = document.querySelector('#ranking-table tbody');
+            tbody.innerHTML = filtered.map((s, i) => `
+            <tr>
+                <td>${i + 1}</td>
+                <td onclick="showCode('${s.nickname}', ${s.level})" style="cursor:pointer; text-decoration:underline; color:#4cc9f0;">${s.nickname}</td>
+                <td>${s.steps}</td>
+                <td>${s.time.toFixed(2)}s</td>
+            </tr>
+        `).join('');
+        }
+
+        // コード表示
+        function showCode(nickname, level) {
+            const score = allScores.find(s => s.nickname === nickname && s.level === level);
+            if (!score) return;
+            document.getElementById('code-owner').innerText = `${nickname} さんのコード (Level ${level})`;
+
+            // 簡易シンタックスハイライト
+            const highlighted = score.code
+                .replace(/async|await|function|if|else|while|for|const|let/g, '<span style="color:#f72585;">$&</span>')
+                .replace(/move|look|dash|sleep/g, '<span style="color:#4cc9f0;">$&</span>');
+
+            document.getElementById('code-display').innerHTML = highlighted;
+            document.getElementById('code-modal').style.display = 'block';
+        }
+
+        function closeCodeModal() {
+            document.getElementById('code-modal').style.display = 'none';
+        }
+
+        // 速報テロップ
+        socket.on('new_goal_news', (data) => {
+            const t = document.getElementById('ticker');
+            t.innerText = `【速報】${data.nickname} さんが Level ${data.level} をクリア！ (手数: ${data.steps} / タイム: ${data.time.toFixed(2)}s)`;
+            t.style.animation = 'none'; t.offsetHeight; t.style.animation = null;
+        });
+
+        function emergencyStop() {
+            if (confirm("全参加者のプログラムを強制停止しますか？")) socket.emit('admin_emergency_stop');
+        }
+    </script>
+</body>
+
+</html>

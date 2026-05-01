@@ -6,6 +6,8 @@ const cors = require('cors');
 const app = express();
 app.use(cors());
 app.use(express.static('public')); // 管理画面用
+app.use('/data', express.static('data')); // これを追加！
+
 
 const server = http.createServer(app);
 const io = new Server(server, {
@@ -40,6 +42,14 @@ io.on('connection', (socket) => {
 
     socket.on('disconnect', () => {
         console.log('切断されました');
+    });
+
+    // server.js の io.on('connection', ...) 内に追加
+
+    // 運営からの指示：全員にマップを強制配信
+    socket.on('admin_broadcast_map', (mapData) => {
+        console.log('本番マップを配信します:', mapData.name);
+        io.emit('remote_load_map', mapData);
     });
 });
 
